@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ember Knight - A Retro Adventure</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #1a1a2e;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: #fff;
+        }
+
+        #gameContainer {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            background: #0f3460;
+            border: 4px solid #e94560;
+            image-rendering: pixelated;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(233, 69, 96, 0.5);
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            image-rendering: pixelated;
+        }
+
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 14px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border: 2px solid #e94560;
+        }
+
+        .stat {
+            margin: 5px 0;
+            display: flex;
+            align-items: center;
+        }
+
+        .stat-label {
+            width: 80px;
+            color: #e94560;
+        }
+
+        .stat-bar {
+            width: 100px;
+            height: 8px;
+            background: #1a1a2e;
+            border: 1px solid #e94560;
+            margin-left: 5px;
+        }
+
+        .stat-fill {
+            height: 100%;
+            background: #e94560;
+        }
+
+        #instructions {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            font-size: 12px;
+            color: #a8e6cf;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border: 2px solid #a8e6cf;
+        }
+
+        #startScreen, #gameOverScreen, #victoryScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 52, 96, 0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            font-size: 24px;
+            text-align: center;
+        }
+
+        #startScreen {
+            background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+        }
+
+        .screen-title {
+            font-size: 48px;
+            margin-bottom: 20px;
+            color: #e94560;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+        }
+
+        .screen-text {
+            font-size: 18px;
+            margin: 10px 0;
+            color: #a8e6cf;
+        }
+
+        .screen-button {
+            margin-top: 30px;
+            padding: 10px 20px;
+            font-size: 18px;
+            background: #e94560;
+            color: #1a1a2e;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+
+        .screen-button:hover {
+            background: #a8e6cf;
+            transform: scale(1.1);
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+        <div id="startScreen">
+            <div class="screen-title">EMBER KNIGHT</div>
+            <div class="screen-text">A Retro 8-bit Adventure</div>
+            <div class="screen-text">Escape the burning fortress</div>
+            <button class="screen-button" onclick="game.start()">START GAME</button>
+            <div style="margin-top: 40px; font-size: 14px; color: #a8e6cf;">
+                Controls: Arrow Keys / WASD to Move<br>
+                SPACE to Jump | Z to Attack | X to Dash
+            </div>
+        </div>
+
+        <div id="gameOverScreen" class="hidden">
+            <div class="screen-title">GAME OVER</div>
+            <div class="screen-text" id="gameOverText"></div>
+            <button class="screen-button" onclick="game.restart()">TRY AGAIN</button>
+        </div>
+
+        <div id="victoryScreen" class="hidden">
+            <div class="screen-title">VICTORY!</div>
+            <div class="screen-text">You escaped the fortress!</div>
+            <div class="screen-text" id="victoryText"></div>
+            <button class="screen-button" onclick="game.restart()">PLAY AGAIN</button>
+        </div>
+
+        <div id="ui">
+            <div class="stat">
+                <span class="stat-label">HP:</span>
+                <div class="stat-bar">
+                    <div class="stat-fill" id="healthBar" style="width: 100%"></div>
+                </div>
+            </div>
+            <div class="stat">
+                <span class="stat-label">LEVEL:</span>
+                <span id="levelDisplay" style="color: #a8e6cf;">1</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">SCORE:</span>
+                <span id="scoreDisplay" style="color: #a8e6cf;">0</span>
+            </div>
+        </div>
+
+        <div id="instructions">
+            ↑↓ Jump/Fall | ← → Move | Z Attack | X Dash | P Pause
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Pixel art utility
+        const pixelSize = 2;
+
+        function drawPixel(x, y, color) {
+            ctx.fillStyle = color;
+            ctx.fillRect(x * pixelSize, y * pixelSize, pixelSize, pixelSize);
+        }
+
+        function drawRect(x, y, w, h, color) {
+            ctx.fillStyle = color;
+            ctx.fillRect(x, y, w, h);
+        }
+
+        // Game object
+        const game = {
+            running: false,
+            paused: false,
+            score: 0,
+            currentLevel: 1,
+            width: 800,
+            height: 600,
+
+            start() {
+                document.getElementById('startScreen').classList.add('hidden');
+                this.running = true;
+                this.score = 0;
+                this.currentLevel = 1;
+                this.init();
+                this.gameLoop();
+            },
+
+            restart() {
+                document.getElementById('gameOverScreen').classList.add('hidden');
+                document.getElementById('victoryScreen').classList.add('hidden');
+                this.start();
+            },
+
+            init() {
+                player.reset();
+                enemies = [];
+                platforms = [];
+                particles = [];
+                spikes = [];
+                coins = [];
+                chests = [];
+                
+                this.generateLevel();
+            },
+
+            generateLevel() {
+                platforms = [];
+                enemies = [];
+                coins = [];
+                spikes = [];
+                chests = [];
+
+                if (this.currentLevel === 1) {
+                    this.createLevel1();
+                } else if (this.currentLevel === 2) {
+                    this.createLevel2();
+                } else if (this.currentLevel === 3) {
+                    this.createLevel3();
+                }
+            },
+
+            createLevel1() {
+                // Ground platforms
+                platforms.push(new Platform(0, 550, 800, 50, '#8b4513'));
+                
+                // Level design
+                platforms.push(new Platform(100, 480, 150, 20, '#d2691e'));
+                platforms.push(new Platform(350, 450, 150, 20, '#d2691e'));
+                platforms.push(new Platform(600, 420, 150, 20, '#d2691e'));
+                platforms.push(new Platform(150, 350, 100, 20, '#d2691e'));
+                platforms.push(new Platform(550, 340, 120, 20, '#d2691e'));
+                platforms.push(new Platform(300, 250, 200, 20, '#d2691e'));
+                platforms.push(new Platform(100, 150, 150, 20, '#d2691e'));
+                platforms.push(new Platform(550, 180, 150, 20, '#d2691e'));
+
+                // Enemies
+                enemies.push(new Enemy(200, 420, 100, 200));
+                enemies.push(new Enemy(450, 380, 350, 550));
+                enemies.push(new Enemy(600, 290, 550, 700));
+
+                // Coins
+                coins.push(new Coin(200, 440));
+                coins.push(new Coin(450, 410));
+                coins.push(new Coin(700, 390));
+                coins.push(new Coin(200, 300));
+                coins.push(new Coin(400, 200));
+
+                // Chest (exit)
+                chests.push(new Chest(750, 510));
+
+                // Spikes
+                spikes.push(new Spike(250, 530, 50));
+                spikes.push(new Spike(500, 530, 50));
+            },
+
+            createLevel2() {
+                player.x = 50;
+                player.y = 500;
+
+                platforms.push(new Platform(0, 550, 800, 50, '#8b4513'));
+                
+                platforms.push(new Platform(50, 480, 120, 20, '#d2691e'));
+                platforms.push(new Platform(250, 420, 120, 20, '#d2691e'));
+                platforms.push(new Platform(450, 380, 120, 20, '#d2691e'));
+                platforms.push(new Platform(650, 340, 120, 20, '#d2691e'));
+                platforms.push(new Platform(100, 280, 200, 20, '#d2691e'));
+                platforms.push(new Platform(400, 240, 200, 20, '#d2691e'));
+                platforms.push(new Platform(650, 200, 120, 20, '#d2691e'));
+                platforms.push(new Platform(200, 120, 400, 20, '#d2691e'));
+
+                enemies.push(new Enemy(300, 360, 200, 400));
+                enemies.push(new Enemy(550, 300, 450, 700));
+                enemies.push(new Enemy(400, 180, 300, 550));
+                enemies.push(new Enemy(650, 250, 600, 750));
+
+                coins.push(new Coin(200, 440));
+                coins.push(new Coin(350, 380));
+                coins.push(new Coin(550, 340));
+                coins.push(new Coin(700, 300));
+                coins.push(new Coin(300, 240));
+
+                chests.push(new Chest(750, 510));
+
+                spikes.push(new Spike(350, 530, 80));
+                spikes.push(new Spike(600, 530, 60));
+            },
+
+            createLevel3() {
+                player.x = 50;
+                player.y = 500;
+
+                platforms.push(new Platform(0, 550, 800, 50, '#8b4513'));
+                
+                // Final level - more challenging
+                platforms.push(new Platform(50, 480, 100, 20, '#d2691e'));
+                platforms.push(new Platform(250, 420, 100, 20, '#d2691e'));
+                platforms.push(new Platform(450, 380, 100, 20, '#d2691e'));
+                platforms.push(new Platform(600, 330, 150, 20, '#d2691e'));
+                platforms.push(new Platform(150, 280, 200, 20, '#d2691e'));
+                platforms.push(new Platform(500, 250, 250, 20, '#d2691e'));
+                platforms.push(new Platform(100, 150, 300, 20, '#d2691e'));
+                platforms.push(new Platform(500, 120, 250, 20, '#d2691e'));
+
+                // Boss
+                enemies.push(new Boss(650, 450));
+
+                enemies.push(new Enemy(300, 340, 250, 450));
+                enemies.push(new Enemy(550, 290, 450, 650));
+
+                coins.push(new Coin(150, 440));
+                coins.push(new Coin(350, 380));
+                coins.push(new Coin(550, 340));
+                coins.push(new Coin(250, 240));
+                coins.push(new Coin(600, 210));
+
+                chests.push(new Chest(750, 510));
+
+                spikes.push(new Spike(350, 530, 80));
+                spikes.push(new Spike(500, 530, 80));
+                spikes.push(new Spike(650, 530, 80));
+            },
+
+            gameLoop() {
+                ctx.fillStyle = '#0f3460';
+                ctx.fillRect(0, 0, this.width, this.height);
+
+                if (!this.running) return;
+                if (this.paused) {
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+                    ctx.fillRect(0, 0, this.width, this.height);
+                    ctx.fillStyle = '#e94560';
+                    ctx.font = 'bold 40px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('PAUSED', this.width / 2, this.height / 2);
+                    requestAnimationFrame(() => this.gameLoop());
+                    return;
+                }
+
+                // Update
+                player.update();
+                
+                enemies.forEach(e => e.update());
+                particles.forEach((p, i) => {
+                    p.update();
+                    if (p.life <= 0) particles.splice(i, 1);
+                });
+
+                // Draw
+                platforms.forEach(p => p.draw());
+                spikes.forEach(s => s.draw());
+                coins.forEach(c => c.draw());
+                chests.forEach(c => c.draw());
+                enemies.forEach(e => e.draw());
+                player.draw();
+                particles.forEach(p => p.draw());
+
+                // Update UI
+                document.getElementById('healthBar').style.width = (player.health / player.maxHealth) * 100 + '%';
+                document.getElementById('levelDisplay').textContent = this.currentLevel;
+                document.getElementById('scoreDisplay').textContent = this.score;
+
+                // Check collisions
+                this.checkCollisions();
+
+                requestAnimationFrame(() => this.gameLoop());
+            },
+
+            checkCollisions() {
+                // Coin collection
+                coins.forEach((coin, i) => {
+                    if (player.collidesWith(coin)) {
+                        this.score += 10;
+                        coins.splice(i, 1);
+                        createParticles(coin.x, coin.y, '#ffd700', 5);
+                    }
+                });
+
+                // Chest (level complete)
+                chests.forEach(chest => {
+                    if (player.collidesWith(chest)) {
+                        this.currentLevel++;
+                        if (this.currentLevel > 3) {
+                            this.levelUp();
+                        } else {
+                            this.generateLevel();
+                        }
+                    }
+                });
+
+                // Spike collision
+                spikes.forEach(spike => {
+                    if (player.collidesWith(spike)) {
+                        player.takeDamage(5);
+                    }
+                });
+
+                // Enemy collision
+                enemies.forEach(enemy => {
+                    if (player.collidesWith(enemy)) {
+                        if (player.velocityY > 0 && player.y < enemy.y) {
+                            // Jump on enemy
+                            enemy.die();
+                            player.velocityY = -10;
+                            this.score += 50;
+                        } else {
+                            player.takeDamage(10);
+                        }
+                    }
+                });
+            },
+
+            levelUp() {
+                document.getElementById('gameOverScreen').classList.add('hidden');
+                document.getElementById('victoryScreen').classList.remove('hidden');
+                document.getElementById('victoryText').textContent = 'Final Score: ' + this.score;
+                this.running = false;
+            }
+        };
+
+        // Player object
+        const player = {
+            x: 50,
+            y: 500,
+            width: 16,
+            height: 24,
+            velocityX: 0,
+            velocityY: 0,
+            health: 100,
+            maxHealth: 100,
+            canJump: false,
+            dashCooldown: 0,
+            attackCooldown: 0,
+            invulnerable: 0,
+            colors: ['#ff6b35', '#f7931e', '#fdb833'], // Orange/red colors
+
+            reset() {
+                this.x = 50;
+                this.y = 500;
+                this.velocityX = 0;
+                this.velocityY = 0;
+                this.health = 100;
+                this.canJump = false;
+            },
+
+            update() {
+                // Input
+                if (keys['ArrowLeft'] || keys['a']) {
+                    this.velocityX = -5;
+                    this.facingLeft = true;
+                } else if (keys['ArrowRight'] || keys['d']) {
+                    this.velocityX = 5;
+                    this.facingLeft = false;
+                } else {
+                    this.velocityX *= 0.8;
+                }
+
+                if ((keys[' '] || keys['ArrowUp'] || keys['w']) && this.canJump) {
+                    this.velocityY = -12;
+                    this.canJump = false;
+                }
+
+                if (keys['x'] && this.dashCooldown <= 0) {
+                    this.dash();
+                }
+
+                if (keys['z']) {
+                    this.attack();
+                }
+
+                // Physics
+                this.velocityY += 0.6; // Gravity
+                this.velocityY = Math.min(this.velocityY, 15); // Terminal velocity
+
+                this.x += this.velocityX;
+                this.y += this.velocityY;
+
+                // Platform collision
+                this.canJump = false;
+                platforms.forEach(platform => {
+                    if (this.x + this.width > platform.x &&
+                        this.x < platform.x + platform.width &&
+                        this.y + this.height >= platform.y &&
+                        this.y + this.height <= platform.y + platform.height + 5 &&
+                        this.velocityY >= 0) {
+                        this.y = platform.y - this.height;
+                        this.velocityY = 0;
+                        this.canJump = true;
+                    }
+                });
+
+                // Bounds
+                if (this.x < 0) this.x = 0;
+                if (this.x + this.width > 800) this.x = 800 - this.width;
+                if (this.y > 600) this.takeDamage(100);
+
+                this.dashCooldown--;
+                this.attackCooldown--;
+                this.invulnerable--;
+
+                if (this.health <= 0) {
+                    game.running = false;
+                    document.getElementById('gameOverText').textContent = 'Score: ' + game.score;
+                    document.getElementById('gameOverScreen').classList.remove('hidden');
+                }
+            },
+
+            draw() {
+                ctx.fillStyle = this.invulnerable > 0 && Math.floor(Date.now() / 100) % 2 === 0 ? '#aaaaaa' : this.colors[Math.floor(Date.now() / 200) % 3];
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+
+                // Eyes
+                ctx.fillStyle = '#000';
+                ctx.fillRect(this.x + 4, this.y + 6, 2, 2);
+                ctx.fillRect(this.x + 10, this.y + 6, 2, 2);
+
+                // Sword
+                if (this.attackCooldown > 0) {
+                    ctx.fillStyle = '#ffd700';
+                    if (this.facingLeft) {
+                        ctx.fillRect(this.x - 8, this.y + 8, 8, 4);
+                    } else {
+                        ctx.fillRect(this.x + this.width, this.y + 8, 8, 4);
+                    }
+                }
+            },
+
+            collidesWith(object) {
+                return this.x < object.x + object.width &&
+                       this.x + this.width > object.x &&
+                       this.y < object.y + object.height &&
+                       this.y + this.height > object.y;
+            },
+
+            takeDamage(amount) {
+                if (this.invulnerable > 0) return;
+                this.health -= amount;
+                this.invulnerable = 30;
+                createParticles(this.x + this.width / 2, this.y, '#ff0000', 10);
+            },
+
+            dash() {
+                this.dashCooldown = 30;
+                const direction = this.facingLeft ? -1 : 1;
+                this.x += direction * 20;
+                createParticles(this.x, this.y, '#ffaa00', 8);
+            },
+
+            attack() {
+                if (this.attackCooldown <= 0) {
+                    this.attackCooldown = 15;
+                    createParticles(this.x + this.width / 2, this.y, '#ffff00', 5);
+                }
+            },
+
+            facingLeft: false
+        };
+
+        // Enemy object
+        class Enemy {
+            constructor(x, y, minX, maxX) {
+                this.x = x;
+                this.y = y;
+                this.width = 16;
+                this.height = 16;
+                this.velocityX = 2;
+                this.minX = minX;
+                this.maxX = maxX;
+                this.health = 20;
+                this.alive = true;
+            }
+
+            update() {
+                this.x += this.velocityX;
+                if (this.x < this.minX || this.x > this.maxX) {
+                    this.velocityX *= -1;
+                }
+            }
+
+            draw() {
+                ctx.fillStyle = '#8b0000';
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+
+                // Eyes
+                ctx.fillStyle = '#ffff00';
+                ctx.fillRect(this.x + 2, this.y + 4, 3, 3);
+                ctx.fillRect(this.x + 11, this.y + 4, 3, 3);
+            }
+
+            die() {
+                this.alive = false;
+                createParticles(this.x + this.width / 2, this.y, '#8b0000', 15);
+                const index = enemies.indexOf(this);
+                if (index > -1) enemies.splice(index, 1);
+            }
+        }
+
+        // Boss object
+        class Boss extends Enemy {
+            constructor(x, y) {
+                super(x, y, 550, 750);
+                this.width = 32;
+                this.height = 32;
+                this.health = 100;
+                this.attackCooldown = 0;
+                this.velocityX = 1.5;
+            }
+
+            update() {
+                super.update();
+                this.attackCooldown++;
+
+                if (this.attackCooldown > 60) {
+                    this.attackCooldown = 0;
+                    createParticles(this.x + this.width / 2, this.y + this.height, '#ff0000', 20);
+                }
+            }
+
+            draw() {
+                ctx.fillStyle = '#cc0000';
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+
+                // Crown
+                ctx.fillStyle = '#ffd700';
+                ctx.fillRect(this.x + 4, this.y, 8, 4);
+                ctx.fillRect(this.x + 12, this.y, 8, 4);
+                ctx.fillRect(this.x + 20, this.y, 8, 4);
+
+                // Eyes
+                ctx.fillStyle = '#ffff00';
+                ctx.fillRect(this.x + 6, this.y + 10, 4, 4);
+                ctx.fillRect(this.x + 18, this.y + 10, 4, 4);
+            }
+        }
+
+        // Platform object
+        class Platform {
+            constructor(x, y, width, height, color) {
+                this.x = x;
+                this.y = y;
+                this.width = width;
+                this.height = height;
+                this.color = color;
+            }
+
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+
+                // Add detail
+                ctx.fillStyle = this.color === '#8b4513' ? '#a0522d' : '#cd853f';
+                for (let i = 0; i < this.width; i += 20) {
+                    ctx.fillRect(this.x + i, this.y + this.height - 4, 16, 4);
+                }
+            }
+        }
+
+        // Spike object
+        class Spike {
+            constructor(x, y, width) {
+                this.x = x;
+                this.y = y;
+                this.width = width;
+                this.height = 20;
+            }
+
+            draw() {
+                ctx.fillStyle = '#666';
+                for (let i = 0; i < this.width; i += 10) {
+                    ctx.beginPath();
+                    ctx.moveTo(this.x + i, this.y);
+                    ctx.lineTo(this.x + i + 5, this.y + this.height);
+                    ctx.lineTo(this.x + i + 10, this.y);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+            }
+        }
+
+        // Coin object
+        class Coin {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.width = 10;
+                this.height = 10;
+                this.rotation = 0;
+            }
+
+            draw() {
+                ctx.fillStyle = '#ffd700';
+                ctx.beginPath();
+                ctx.arc(this.x + this.width / 2, this.y + this.height / 2, 5, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#ffed4e';
+                ctx.beginPath();
+                ctx.arc(this.x + this.width / 2, this.y + this.height / 2, 2, 0, Math.PI * 2);
+                ctx.fill();
+
+                this.rotation += 0.1;
+            }
+        }
+
+        // Chest object
+        class Chest {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.width = 20;
+                this.height = 20;
+                this.open = false;
+            }
+
+            draw() {
+                ctx.fillStyle = '#8b4513';
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+
+                ctx.fillStyle = '#d2691e';
+                ctx.fillRect(this.x + 2, this.y + 2, this.width - 4, this.height - 4);
+
+                ctx.fillStyle = '#ffd700';
+                ctx.fillRect(this.x + 4, this.y + 4, this.width - 8, 2);
+            }
+        }
+
+        // Particle system
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.velocityX = (Math.random() - 0.5) * 4;
+                this.velocityY = Math.random() * -3 - 1;
+                this.color = color;
+                this.life = 30;
+            }
+
+            update() {
+                this.x += this.velocityX;
+                this.y += this.velocityY;
+                this.velocityY += 0.2;
+                this.life--;
+            }
+
+            draw() {
+                ctx.globalAlpha = this.life / 30;
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x, this.y, 3, 3);
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        function createParticles(x, y, color, count) {
+            for (let i = 0; i < count; i++) {
+                particles.push(new Particle(x, y, color));
+            }
+        }
+
+        // Game state
+        let platforms = [];
+        let enemies = [];
+        let particles = [];
+        let spikes = [];
+        let coins = [];
+        let chests = [];
+
+        // Input
+        const keys = {};
+        window.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+
+            if (e.key === 'p' || e.key === 'P') {
+                if (game.running) {
+                    game.paused = !game.paused;
+                }
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        // Start the game loop
+        game.start();
+    </script>
+</body>
+</html>
